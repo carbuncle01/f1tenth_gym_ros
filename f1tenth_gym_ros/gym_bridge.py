@@ -33,6 +33,8 @@ from geometry_msgs.msg import Transform
 from geometry_msgs.msg import Quaternion
 from ackermann_msgs.msg import AckermannDriveStamped
 from tf2_ros import TransformBroadcaster
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 import gym
 import numpy as np
@@ -145,6 +147,12 @@ class GymBridge(Node):
             self.opp_ego_odom_pub = self.create_publisher(Odometry, opp_ego_odom_topic, 10)
             self.opp_drive_published = False
 
+        # QoS Profiles
+        best_effort_qos_profile = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            depth=10)
+
         # subscribers
         self.ego_drive_sub = self.create_subscription(
             AckermannDriveStamped,
@@ -155,7 +163,7 @@ class GymBridge(Node):
             PoseWithCovarianceStamped,
             '/initialpose',
             self.ego_reset_callback,
-            10)
+            qos_profile=best_effort_qos_profile)
         if num_agents == 2:
             self.opp_drive_sub = self.create_subscription(
                 AckermannDriveStamped,
@@ -231,14 +239,13 @@ class GymBridge(Node):
             self.obs, _, self.done, _ = self.env.step(np.array([[self.ego_steer, self.ego_requested_speed]]))
         elif self.ego_drive_published and self.has_opp and self.opp_drive_published:
             self.obs, _, self.done, _ = self.env.step(np.array([[self.ego_steer, self.ego_requested_speed], [self.opp_steer, self.opp_requested_speed]]))
+        self.ts = self.get_clock().now().to_msg()
         self._update_sim_state()
 
     def timer_callback(self):
-        ts = self.get_clock().now().to_msg()
-
         # pub scans
         scan = LaserScan()
-        scan.header.stamp = ts
+        scan.header.stamp = self.ts
         scan.header.frame_id = self.ego_namespace + '/laser'
         scan.angle_min = self.angle_min
         scan.angle_max = self.angle_max
@@ -250,7 +257,7 @@ class GymBridge(Node):
 
         if self.has_opp:
             opp_scan = LaserScan()
-            opp_scan.header.stamp = ts
+            opp_scan.header.stamp = self.ts
             opp_scan.header.frame_id = self.opp_namespace + '/laser'
             opp_scan.angle_min = self.angle_min
             opp_scan.angle_max = self.angle_max
@@ -261,10 +268,9 @@ class GymBridge(Node):
             self.opp_scan_pub.publish(opp_scan)
 
         # pub tf
-        self._publish_odom(ts)
-        self._publish_transforms(ts)
-        self._publish_laser_transforms(ts)
-        self._publish_wheel_transforms(ts)
+        self._publish_odom(self.ts)
+        self._publish_transforms(self.ts)
+        self._publish_wheel_transforms(self.ts)
 
     def _update_sim_state(self):
         self.ego_scan = list(self.obs['scans'][0])
@@ -388,29 +394,20 @@ class GymBridge(Node):
             opp_wheel_ts.child_frame_id = self.opp_namespace + '/front_right_wheel'
             self.br.sendTransform(opp_wheel_ts)
 
-    def _publish_laser_transforms(self, ts):
-        ego_scan_ts = TransformStamped()
-        ego_scan_ts.transform.translation.x = self.scan_distance_to_base_link
-        # ego_scan_ts.transform.translation.z = 0.04+0.1+0.025
-        ego_scan_ts.transform.rotation.w = 1.
-        ego_scan_ts.header.stamp = ts
-        ego_scan_ts.header.frame_id = self.ego_namespace + '/base_link'
-        ego_scan_ts.child_frame_id = self.ego_namespace + '/laser'
-        self.br.sendTransform(ego_scan_ts)
-
-        if self.has_opp:
-            opp_scan_ts = TransformStamped()
-            opp_scan_ts.transform.translation.x = self.scan_distance_to_base_link
-            opp_scan_ts.transform.rotation.w = 1.
-            opp_scan_ts.header.stamp = ts
-            opp_scan_ts.header.frame_id = self.opp_namespace + '/base_link'
-            opp_scan_ts.child_frame_id = self.opp_namespace + '/laser'
-            self.br.sendTransform(opp_scan_ts)
-
 def main(args=None):
     rclpy.init(args=args)
     gym_bridge = GymBridge()
-    rclpy.spin(gym_bridge)
+    
+    executor = MultiThreadedExecutor()
+    executor.add_node(gym_bridge)
+
+    try:
+        executor.spin()
+    except KeyboardInterrupt:
+        gym_bridge.get_logger().info('Exiting gym_bridge')
+    
+    gym_bridge.destroy_node()
+    rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
