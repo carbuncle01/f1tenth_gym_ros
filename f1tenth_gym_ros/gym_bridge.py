@@ -36,7 +36,7 @@ from tf2_ros import TransformBroadcaster
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
-import gym
+import gymnasium
 import numpy as np
 from transforms3d import euler
 
@@ -76,7 +76,7 @@ class GymBridge(Node):
             raise ValueError('num_agents should be an int.')
 
         # env backend
-        self.env = gym.make('f110_gym:f110-v0',
+        self.env = gymnasium.make('f110_gym:f110-v0',
                             map=self.get_parameter('map_path').value,
                             map_ext=self.get_parameter('map_img_ext').value,
                             num_agents=num_agents,
