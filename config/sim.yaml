@@ -48,6 +48,10 @@ bridge:
     # opponent parameters
     num_agent: 1
 
+    # lidar param
+    scan_beams: 1080
+    fov: 4.7
+
     # ego starting pose on map
     sx: 0.0
     sy: 0.0
@@ -60,3 +64,8 @@ bridge:
 
     # teleop
     kb_teleop: True
+
+    # callback rate
+    sim_rate: 100.0
+    scan_rate: 40.0
+    odom_rate: 100.0
