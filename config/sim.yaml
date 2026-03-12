@@ -60,3 +60,8 @@ bridge:
 
     # teleop
     kb_teleop: True
+
+    # callback rate
+    sim_rate: 100.0
+    scan_rate: 40.0
+    odom_rate: 100.0
