@@ -48,6 +48,10 @@ bridge:
     # opponent parameters
     num_agent: 1
 
+    # lidar param
+    scan_beams: 1080
+    fov: 4.7
+
     # ego starting pose on map
     sx: 0.0
     sy: 0.0
