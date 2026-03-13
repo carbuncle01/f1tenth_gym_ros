@@ -108,12 +108,12 @@ class JaxGymBridge(Node):
             self.opp_requested_speed = 0.0
             self.opp_steer = 0.0
             self.obs, _, self.done, _ = self.env.reset(np.array([[sx, sy, stheta], [sx1, sy1, stheta1]]))
-            self.ego_scan = list(self.obs['scans'][0])
-            self.opp_scan = list(self.obs['scans'][1])
         else:
             self.has_opp = False
             self.obs, _, self.done, _ = self.env.reset(np.array([[sx, sy, stheta]]))
-            self.ego_scan = list(self.obs['scans'][0])
+
+        # 初期状態の型変換（JAX -> Python native）
+        self._update_sim_state()
 
         # Hzから周期(秒)への変換
         sim_period = 1.0 / self.get_parameter('sim_rate').value
@@ -162,8 +162,9 @@ class JaxGymBridge(Node):
         rx = msg.pose.pose.position.x; ry = msg.pose.pose.position.y
         _, _, rtheta = euler.quat2euler([msg.pose.pose.orientation.w, msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z], axes='sxyz')
         if self.has_opp:
-            opp = [self.obs['poses_x'][1], self.obs['poses_y'][1], self.obs['poses_theta'][1]]
-            self.obs, _, self.done, _ = self.env.reset(np.array([[rx, ry, rtheta], opp]))
+            # self.obs が既に float化されているのでそのまま使えます
+            opp = [self.ego_pose[1], self.ego_pose[1], self.ego_pose[2]] # 修正: opp_pose を使う
+            self.obs, _, self.done, _ = self.env.reset(np.array([[rx, ry, rtheta], self.opp_pose]))
         else:
             self.obs, _, self.done, _ = self.env.reset(np.array([[rx, ry, rtheta]]))
         self._update_sim_state()
@@ -186,7 +187,9 @@ class JaxGymBridge(Node):
             self.obs, _, self.done, _ = self.env.step(np.array([[self.ego_steer, self.ego_requested_speed]]))
         elif self.ego_drive_published and self.has_opp and self.opp_drive_published:
             self.obs, _, self.done, _ = self.env.step(np.array([[self.ego_steer, self.ego_requested_speed], [self.opp_steer, self.opp_requested_speed]]))
-        if self.done:
+        
+        # JAXの done は DeviceArray なので bool() で評価
+        if bool(self.done):
             self.get_logger().warn("Done! Auto-resetting.")
             sx = self.get_parameter('sx').value; sy = self.get_parameter('sy').value; stheta = self.get_parameter('stheta').value
             if self.has_opp:
@@ -204,7 +207,7 @@ class JaxGymBridge(Node):
         scan.header.stamp = ts; scan.header.frame_id = self.ego_namespace + '/laser'
         scan.angle_min = self.angle_min; scan.angle_max = self.angle_max; scan.angle_increment = self.angle_inc
         scan.range_min = 0.; scan.range_max = 30.
-        scan.ranges = [float(r) for r in self.ego_scan]
+        scan.ranges = self.ego_scan # すでにfloatのリストに変換済み
         
         self.ego_scan_pub.publish(scan)
         
@@ -213,7 +216,7 @@ class JaxGymBridge(Node):
             opp_scan.header.stamp = ts; opp_scan.header.frame_id = self.opp_namespace + '/laser'
             opp_scan.angle_min = self.angle_min; opp_scan.angle_max = self.angle_max; opp_scan.angle_increment = self.angle_inc
             opp_scan.range_min = 0.; opp_scan.range_max = 30.
-            opp_scan.ranges = [float(r) for r in self.opp_scan]
+            opp_scan.ranges = self.opp_scan # すでにfloatのリストに変換済み
             
             self.opp_scan_pub.publish(opp_scan)
 
@@ -224,39 +227,41 @@ class JaxGymBridge(Node):
         self._publish_wheel_transforms(ts)
 
     def _update_sim_state(self):
-        self.ego_scan = list(self.obs['scans'][0])
-        self.ego_pose = [self.obs['poses_x'][0], self.obs['poses_y'][0], self.obs['poses_theta'][0]]
-        self.ego_speed = [self.obs['linear_vels_x'][0], self.obs['linear_vels_y'][0], self.obs['ang_vels_z'][0]]
+        # 修正箇所: JAXのDeviceArrayからNumPyを経由してPythonのネイティブ型へキャスト
+        self.ego_scan = np.array(self.obs['scans'][0]).tolist()
+        self.ego_pose = [float(self.obs['poses_x'][0]), float(self.obs['poses_y'][0]), float(self.obs['poses_theta'][0])]
+        self.ego_speed = [float(self.obs['linear_vels_x'][0]), float(self.obs['linear_vels_y'][0]), float(self.obs['ang_vels_z'][0])]
+        
         if self.has_opp:
-            self.opp_scan = list(self.obs['scans'][1])
-            self.opp_pose = [self.obs['poses_x'][1], self.obs['poses_y'][1], self.obs['poses_theta'][1]]
-            self.opp_speed = [self.obs['linear_vels_x'][1], self.obs['linear_vels_y'][1], self.obs['ang_vels_z'][1]]
+            self.opp_scan = np.array(self.obs['scans'][1]).tolist()
+            self.opp_pose = [float(self.obs['poses_x'][1]), float(self.obs['poses_y'][1]), float(self.obs['poses_theta'][1])]
+            self.opp_speed = [float(self.obs['linear_vels_x'][1]), float(self.obs['linear_vels_y'][1]), float(self.obs['ang_vels_z'][1])]
 
     def _publish_odom(self, ts):
         ego_odom = Odometry()
         ego_odom.header.stamp = ts; ego_odom.header.frame_id = 'map'
         ego_odom.child_frame_id = self.ego_namespace + '/base_link'
-        ego_odom.pose.pose.position.x = float(self.ego_pose[0])
-        ego_odom.pose.pose.position.y = float(self.ego_pose[1])
-        q = euler.euler2quat(0., 0., float(self.ego_pose[2]), axes='sxyz')
-        ego_odom.pose.pose.orientation.w = float(q[0]); ego_odom.pose.pose.orientation.x = float(q[1])
-        ego_odom.pose.pose.orientation.y = float(q[2]); ego_odom.pose.pose.orientation.z = float(q[3])
-        ego_odom.twist.twist.linear.x = float(self.ego_speed[0])
-        ego_odom.twist.twist.linear.y = float(self.ego_speed[1])
-        ego_odom.twist.twist.angular.z = float(self.ego_speed[2])
+        ego_odom.pose.pose.position.x = self.ego_pose[0]
+        ego_odom.pose.pose.position.y = self.ego_pose[1]
+        q = euler.euler2quat(0., 0., self.ego_pose[2], axes='sxyz')
+        ego_odom.pose.pose.orientation.w = q[0]; ego_odom.pose.pose.orientation.x = q[1]
+        ego_odom.pose.pose.orientation.y = q[2]; ego_odom.pose.pose.orientation.z = q[3]
+        ego_odom.twist.twist.linear.x = self.ego_speed[0]
+        ego_odom.twist.twist.linear.y = self.ego_speed[1]
+        ego_odom.twist.twist.angular.z = self.ego_speed[2]
         self.ego_odom_pub.publish(ego_odom)
         if self.has_opp:
             opp_odom = Odometry()
             opp_odom.header.stamp = ts; opp_odom.header.frame_id = 'map'
             opp_odom.child_frame_id = self.opp_namespace + '/base_link'
-            opp_odom.pose.pose.position.x = float(self.opp_pose[0])
-            opp_odom.pose.pose.position.y = float(self.opp_pose[1])
-            q2 = euler.euler2quat(0., 0., float(self.opp_pose[2]), axes='sxyz')
-            opp_odom.pose.pose.orientation.w = float(q2[0]); opp_odom.pose.pose.orientation.x = float(q2[1])
-            opp_odom.pose.pose.orientation.y = float(q2[2]); opp_odom.pose.pose.orientation.z = float(q2[3])
-            opp_odom.twist.twist.linear.x = float(self.opp_speed[0])
-            opp_odom.twist.twist.linear.y = float(self.opp_speed[1])
-            opp_odom.twist.twist.angular.z = float(self.opp_speed[2])
+            opp_odom.pose.pose.position.x = self.opp_pose[0]
+            opp_odom.pose.pose.position.y = self.opp_pose[1]
+            q2 = euler.euler2quat(0., 0., self.opp_pose[2], axes='sxyz')
+            opp_odom.pose.pose.orientation.w = q2[0]; opp_odom.pose.pose.orientation.x = q2[1]
+            opp_odom.pose.pose.orientation.y = q2[2]; opp_odom.pose.pose.orientation.z = q2[3]
+            opp_odom.twist.twist.linear.x = self.opp_speed[0]
+            opp_odom.twist.twist.linear.y = self.opp_speed[1]
+            opp_odom.twist.twist.angular.z = self.opp_speed[2]
             self.opp_odom_pub.publish(opp_odom)
             self.opp_ego_odom_pub.publish(ego_odom)
             self.ego_opp_odom_pub.publish(opp_odom)
@@ -265,28 +270,28 @@ class JaxGymBridge(Node):
         ego_ts = TransformStamped()
         ego_ts.header.stamp = ts; ego_ts.header.frame_id = 'map'
         ego_ts.child_frame_id = self.ego_namespace + '/base_link'
-        ego_ts.transform.translation.x = float(self.ego_pose[0])
-        ego_ts.transform.translation.y = float(self.ego_pose[1])
-        q = euler.euler2quat(0., 0., float(self.ego_pose[2]), axes='sxyz')
-        ego_ts.transform.rotation.w = float(q[0]); ego_ts.transform.rotation.x = float(q[1])
-        ego_ts.transform.rotation.y = float(q[2]); ego_ts.transform.rotation.z = float(q[3])
+        ego_ts.transform.translation.x = self.ego_pose[0]
+        ego_ts.transform.translation.y = self.ego_pose[1]
+        q = euler.euler2quat(0., 0., self.ego_pose[2], axes='sxyz')
+        ego_ts.transform.rotation.w = q[0]; ego_ts.transform.rotation.x = q[1]
+        ego_ts.transform.rotation.y = q[2]; ego_ts.transform.rotation.z = q[3]
         self.br.sendTransform(ego_ts)
         if self.has_opp:
             opp_ts = TransformStamped()
             opp_ts.header.stamp = ts; opp_ts.header.frame_id = 'map'
             opp_ts.child_frame_id = self.opp_namespace + '/base_link'
-            opp_ts.transform.translation.x = float(self.opp_pose[0])
-            opp_ts.transform.translation.y = float(self.opp_pose[1])
-            q2 = euler.euler2quat(0., 0., float(self.opp_pose[2]), axes='sxyz')
-            opp_ts.transform.rotation.w = float(q2[0]); opp_ts.transform.rotation.x = float(q2[1])
-            opp_ts.transform.rotation.y = float(q2[2]); opp_ts.transform.rotation.z = float(q2[3])
+            opp_ts.transform.translation.x = self.opp_pose[0]
+            opp_ts.transform.translation.y = self.opp_pose[1]
+            q2 = euler.euler2quat(0., 0., self.opp_pose[2], axes='sxyz')
+            opp_ts.transform.rotation.w = q2[0]; opp_ts.transform.rotation.x = q2[1]
+            opp_ts.transform.rotation.y = q2[2]; opp_ts.transform.rotation.z = q2[3]
             self.br.sendTransform(opp_ts)
 
     def _publish_wheel_transforms(self, ts):
         ego_wt = TransformStamped()
         q = euler.euler2quat(0., 0., float(self.ego_steer), axes='sxyz')
-        ego_wt.transform.rotation.w = float(q[0]); ego_wt.transform.rotation.x = float(q[1])
-        ego_wt.transform.rotation.y = float(q[2]); ego_wt.transform.rotation.z = float(q[3])
+        ego_wt.transform.rotation.w = q[0]; ego_wt.transform.rotation.x = q[1]
+        ego_wt.transform.rotation.y = q[2]; ego_wt.transform.rotation.z = q[3]
         ego_wt.header.stamp = ts
         ego_wt.header.frame_id = self.ego_namespace + '/front_left_hinge'
         ego_wt.child_frame_id = self.ego_namespace + '/front_left_wheel'
@@ -297,8 +302,8 @@ class JaxGymBridge(Node):
         if self.has_opp:
             opp_wt = TransformStamped()
             q2 = euler.euler2quat(0., 0., float(self.opp_steer), axes='sxyz')
-            opp_wt.transform.rotation.w = float(q2[0]); opp_wt.transform.rotation.x = float(q2[1])
-            opp_wt.transform.rotation.y = float(q2[2]); opp_wt.transform.rotation.z = float(q2[3])
+            opp_wt.transform.rotation.w = q2[0]; opp_wt.transform.rotation.x = q2[1]
+            opp_wt.transform.rotation.y = q2[2]; opp_wt.transform.rotation.z = q2[3]
             opp_wt.header.stamp = ts
             opp_wt.header.frame_id = self.opp_namespace + '/front_left_hinge'
             opp_wt.child_frame_id = self.opp_namespace + '/front_left_wheel'
