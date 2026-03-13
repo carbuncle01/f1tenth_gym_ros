@@ -11,10 +11,10 @@
     <arg name="opp_drive_topic" default="/opp_racecar/drive" />
     <arg name="opp_odom_topic" default="/opp_racecar/odom" />
 
-    <let name="config" value="$(find-pkg-share f1tenth_gym_ros)/config/sim.yaml" />
+    <let name="sim_config" value="$(find-pkg-share f1tenth_gym_ros)/config/sim.yaml" />
 
     <node pkg="f1tenth_gym_ros" exec="gym_bridge" name="bridge">
-        <param from="$(var config)" />
+        <param from="$(var sim_config)" />
         <param name="map_path" value="$(var map_path)" />
 
         <remap from="ego_racecar/scan" to="$(var ego_scan_topic)" />
