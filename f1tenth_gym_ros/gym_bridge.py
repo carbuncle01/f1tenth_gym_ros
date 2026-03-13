@@ -198,14 +198,18 @@ class JaxGymBridge(Node):
         scan = LaserScan()
         scan.header.stamp = ts; scan.header.frame_id = self.ego_namespace + '/laser'
         scan.angle_min = self.angle_min; scan.angle_max = self.angle_max; scan.angle_increment = self.angle_inc
-        scan.range_min = 0.; scan.range_max = 30.; scan.ranges = self.ego_scan
+        scan.range_min = 0.; scan.range_max = 30.
+        scan.ranges = [float(r) for r in self.ego_scan]
+        
         self.ego_scan_pub.publish(scan)
         
         if self.has_opp:
             opp_scan = LaserScan()
             opp_scan.header.stamp = ts; opp_scan.header.frame_id = self.opp_namespace + '/laser'
             opp_scan.angle_min = self.angle_min; opp_scan.angle_max = self.angle_max; opp_scan.angle_increment = self.angle_inc
-            opp_scan.range_min = 0.; opp_scan.range_max = 30.; opp_scan.ranges = self.opp_scan
+            opp_scan.range_min = 0.; opp_scan.range_max = 30.
+            opp_scan.ranges = [float(r) for r in self.opp_scan]
+            
             self.opp_scan_pub.publish(opp_scan)
 
     def odom_timer_callback(self):
