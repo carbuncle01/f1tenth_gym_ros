@@ -3,14 +3,7 @@
     <arg name="map_ext" default=".png" />
     
     <arg name="has_opp" default="false" />
-    <group if="$(var has_opp)">
-        <arg name="num_agent" default="2" />
-    </group>
-
-    <group unless="$(var has_opp)">
-        <arg name="num_agent" default="1" />
-    </group>
-
+    <let name="num_agent" value="$(eval '2 if \'$(var has_opp)\' == \'true\' else 1')" />
     <arg name="rviz" default="true" />
 
     <arg name="ego_scan_topic" default="/scan" />
