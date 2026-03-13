@@ -10,6 +10,7 @@
     <!-- Gym Bridge ノード -->
     <node pkg="f1tenth_gym_ros" exec="gym_bridge" name="bridge">
         <param from="$(var config)" />
+        <param name="map_path" value="$(var map_path)" />
     </node>
 
     <!-- RViz2 ノード -->
