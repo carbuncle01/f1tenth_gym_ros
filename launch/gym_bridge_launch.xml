@@ -1,6 +1,16 @@
 <launch>
     <arg name="map_path" default="/sim_ws/src/f1tenth_gym_ros/maps/levine" />
+    <arg name="map_ext" default=".png" />
+    
     <arg name="has_opp" default="false" />
+    <group if="$(var has_opp)">
+        <arg name="num_agent" default="2" />
+    </group>
+
+    <group unless="$(var has_opp)">
+        <arg name="num_agent" default="1" />
+    </group>
+
     <arg name="rviz" default="true" />
 
     <arg name="ego_scan_topic" default="/scan" />
@@ -16,6 +26,8 @@
     <node pkg="f1tenth_gym_ros" exec="gym_bridge" name="bridge">
         <param from="$(var sim_config)" />
         <param name="map_path" value="$(var map_path)" />
+        <param name="map_ext" value="$(var map_ext)" />
+        <param name="num_agent" value="$(var num_agent)" />
 
         <remap from="ego_racecar/scan" to="$(var ego_scan_topic)" />
         <remap from="ego_racecar/drive" to="$(var ego_drive_topic)" />
