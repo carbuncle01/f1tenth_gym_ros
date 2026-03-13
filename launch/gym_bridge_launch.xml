@@ -1,45 +1,53 @@
 <launch>
-    <!-- 引数定義: マップファイルのパスと、対戦相手(opp)の有無 -->
     <arg name="map_path" default="/sim_ws/src/f1tenth_gym_ros/maps/levine" />
     <arg name="has_opp" default="false" />
     <arg name="rviz" default="true" />
 
-    <!-- configファイルのパス -->
+    <arg name="ego_scan_topic" default="/scan" />
+    <arg name="ego_drive_topic" default="/jetracer/cmd_drive" />
+    <arg name="ego_odom_topic" default="/odom" />
+    
+    <arg name="opp_scan_topic" default="/opp_racecar/scan" />
+    <arg name="opp_drive_topic" default="/opp_racecar/drive" />
+    <arg name="opp_odom_topic" default="/opp_racecar/odom" />
+
     <let name="config" value="$(find-pkg-share f1tenth_gym_ros)/config/sim.yaml" />
 
-    <!-- Gym Bridge ノード -->
     <node pkg="f1tenth_gym_ros" exec="gym_bridge" name="bridge">
         <param from="$(var config)" />
         <param name="map_path" value="$(var map_path)" />
+
+        <remap from="ego_racecar/scan" to="$(var ego_scan_topic)" />
+        <remap from="ego_racecar/drive" to="$(var ego_drive_topic)" />
+        <remap from="ego_racecar/odom" to="$(var ego_odom_topic)" />
+
+        <remap from="opp_racecar/scan" to="$(var opp_scan_topic)" />
+        <remap from="opp_racecar/drive" to="$(var opp_drive_topic)" />
+        <remap from="opp_racecar/odom" to="$(var opp_odom_topic)" />
     </node>
 
-    <!-- RViz2 ノード -->
     <group if="$(var rviz)">
         <node pkg="rviz2" exec="rviz2" name="rviz" args="-d $(find-pkg-share f1tenth_gym_ros)/launch/gym_bridge.rviz" />
     </group>
 
-    <!-- Map Server ノード -->
     <node pkg="nav2_map_server" exec="map_server" name="map_server" output="screen">
         <param name="yaml_filename" value="$(var map_path).yaml" />
         <param name="frame_id" value="map" />
         <param name="use_sim_time" value="true" />
     </node>
 
-    <!-- Nav2 Lifecycle Manager ノード -->
     <node pkg="nav2_lifecycle_manager" exec="lifecycle_manager" name="lifecycle_manager_localization" output="screen">
         <param name="use_sim_time" value="true" />
         <param name="autostart" value="true" />
         <param name="node_names" value="['map_server']" />
     </node>
 
-    <!-- Ego Robot State Publisher ノード -->
     <let name="ego_xacro" value="$(command 'xacro $(find-pkg-share f1tenth_gym_ros)/launch/ego_racecar.xacro')" />
     <node pkg="robot_state_publisher" exec="robot_state_publisher" name="ego_robot_state_publisher">
         <param name="robot_description" value="$(var ego_xacro)" />
         <remap from="/robot_description" to="ego_robot_description" />
     </node>
 
-    <!-- Opp Robot State Publisher ノード (has_oppがtrueの時のみ起動) -->
     <let name="opp_xacro" value="$(command 'xacro $(find-pkg-share f1tenth_gym_ros)/launch/opp_racecar.xacro')" />
     <node pkg="robot_state_publisher" exec="robot_state_publisher" name="opp_robot_state_publisher" if="$(var has_opp)">
         <param name="robot_description" value="$(var opp_xacro)" />
