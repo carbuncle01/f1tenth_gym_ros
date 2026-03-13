@@ -41,8 +41,6 @@ class JaxGymBridge(Node):
         self.declare_parameter('map_path', '')
         self.declare_parameter('map_img_ext', '.png')
         self.declare_parameter('num_agent', 2)
-        self.declare_parameter('scan_beams', 1080)
-        self.declare_parameter('scan_fov', 4.7)
 
         self.declare_parameter('sx', 0.0)
         self.declare_parameter('sy', 0.0)
