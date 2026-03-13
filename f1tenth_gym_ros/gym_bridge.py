@@ -4,6 +4,8 @@ import os
 import sys
 import numpy as np
 
+os.environ["JAX_PLATFORMS"] = "cpu"
+
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped
