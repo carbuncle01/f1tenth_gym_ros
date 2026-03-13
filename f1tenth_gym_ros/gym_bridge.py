@@ -23,6 +23,8 @@
 import rclpy
 from rclpy.node import Node
 
+os.environ['JAX_PLATFORM_NAME'] = 'cpu'
+
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped
